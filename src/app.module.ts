@@ -27,6 +27,7 @@ import { SearchModule } from './modules/search/search.module';
 import { CashSessionsModule } from './modules/cash-sessions/cash-sessions.module';
 import { AiModule } from './modules/ai/ai.module';
 import { PublicModule } from './modules/public/public.module';
+import { InsightModule } from './modules/insight/insight.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -65,6 +66,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     CashSessionsModule,
     AiModule,
     PublicModule,
+    InsightModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
