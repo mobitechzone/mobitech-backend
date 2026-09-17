@@ -143,6 +143,15 @@ export class AuthService {
     return safeUser;
   }
 
+  async getUsersEmails() {
+    const users = await this.prisma.user.findMany({
+      where: { status: 'ACTIVE' },
+      select: { email: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return users;
+  }
+
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user) {

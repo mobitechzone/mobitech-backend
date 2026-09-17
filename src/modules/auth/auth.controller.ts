@@ -64,4 +64,11 @@ export class AuthController {
   profile(@CurrentUser() user: AuthUser) {
     return this.authService.getProfile(user.id);
   }
+
+  @Public()
+  @Get('users-emails')
+  @ApiOperation({ summary: 'List all user emails for login dropdown' })
+  getUsersEmails() {
+    return this.authService.getUsersEmails();
+  }
 }
