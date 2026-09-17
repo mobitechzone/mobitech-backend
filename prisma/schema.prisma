@@ -292,7 +292,7 @@ model Product {
   status            ProductStatus     @default(ACTIVE)
   notes             String?
   isFavorite        Boolean           @default(false)
-  isTaxable         Boolean           @default(true)
+  isTaxable         Boolean           @default(false)
   infiniteStock     Boolean           @default(false)
   saleItems         SaleItem[]
   stockMovements    StockMovement[]
