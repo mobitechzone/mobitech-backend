@@ -24,6 +24,8 @@ export class AiService {
   async priceResearch(dto: PriceResearchDto): Promise<PriceResearchResultDto> {
     this.ensureApiKey();
 
+    const isPart = dto.type === 'part';
+
     const query = [
       dto.productName,
       dto.brand,
@@ -31,9 +33,36 @@ export class AiService {
       dto.color,
     ].filter(Boolean).join(' ');
 
-    const prompt = `Find prices for "${query}" in Tunisia.
+    const searchLabel = isPart
+      ? `Search for "pièce détachée ${query}" prices in Tunisia — GSM guide, shops selling repair parts (écrans, batteries, chargeurs, cartes mères, hubs USB, vitres arrière, nappes, connecteurs)`
+      : `Search for "${query}" prices in Tunisia`;
 
-IMPORTANT CONTEXT for Tunisia market (year 2026):
+    const contextBlock = isPart
+      ? `IMPORTANT: This is a PART/ACCESSORY search. Focus on GSM repair parts shops in Tunisia.
+
+Search keywords to use: "pièce détachée", "éparation phone", "écran ${query}", "batterie ${query}", "piece detachee GSM Tunisia", "gsm guide pieces", "accessoire phone Tunisie"
+
+PHONE PARTS typical prices in Tunisia (TND):
+- iPhone 13/14 screen (original): 250-400 TND
+- iPhone 13/14 screen (compatible): 120-200 TND
+- iPhone 15/16 screen (original): 400-600 TND
+- iPhone battery (original): 100-150 TND
+- iPhone battery (compatible): 50-80 TND
+- Samsung S23/S24 screen (original): 300-500 TND
+- Samsung screen (compatible): 150-250 TND
+- Samsung battery: 60-120 TND
+- Xiaomi screen: 100-200 TND
+- Charging port (iPhone): 80-150 TND
+- Charging port (Samsung): 60-120 TND
+- Back glass: 80-200 TND
+- Camera lens: 50-120 TND
+- SIM tray: 15-30 TND
+- Flex cable/nappe: 30-80 TND
+- Loudspeaker: 40-80 TND
+
+Focus on shops in: Moncef Bay, La Marsa, Tunis, Sfax, Sousse.
+Mention if parts are original (原装/OEM), compatible (compatible), or refurbished (reconditionné).`
+      : `IMPORTANT CONTEXT for Tunisia market (year 2026):
 
 PHONES (used):
 - iPhone 13 Pro Max 128GB: 1200-1800 TND
@@ -42,22 +71,13 @@ PHONES (used):
 - iPhone 15 Pro Max 256GB new: 4500-6000 TND
 - Samsung Galaxy S23 Ultra: 2000-3000 TND
 - Samsung Galaxy S24 Ultra new: 4000-5500 TND
-- Xiaomi Redmi Note 13 new: 500-800 TND
+- Xiaomi Redmi Note 13 new: 500-800 TND`;
 
-PHONE PARTS (screens, batteries, charging ports, etc.):
-- iPhone 13/14 screen replacement: 200-400 TND
-- iPhone 15/16 screen replacement: 350-600 TND
-- iPhone battery replacement: 80-150 TND
-- Samsung screen replacement: 250-500 TND
-- Samsung battery replacement: 80-150 TND
-- Xiaomi screen replacement: 100-250 TND
-- Charging port repair: 50-150 TND
-- Back glass replacement: 100-250 TND
-- Camera lens replacement: 50-150 TND
+    const prompt = `${searchLabel}
 
-If the user asks about parts, focus on repair shops in Moncef Bay, La Marsa, and Tunis area that sell phone parts. Include shops that sell screens, batteries, chargers, cases, and accessories.
+${contextBlock}
 
-Search Facebook Marketplace Tunisia, local shops in Moncef Bay/La Marsa, and Tunisian online stores.
+Search Facebook Marketplace Tunisia, GSM guide shops, local shops in Moncef Bay/La Marsa, and Tunisian online stores.
 
 Return ONLY this JSON, nothing else:
 {"sources":[{"shop":"name","price":1500,"notes":"info"}],"averagePrice":1500,"minPrice":1200,"maxPrice":1800,"summary":"brief summary","recommendation":"pricing advice"}
@@ -67,7 +87,7 @@ Rules:
 - Numbers only, no strings
 - 3 to 5 sources minimum
 - Be friendly and helpful
-- For parts, mention if price is for original or compatible/generic part`;
+- ${isPart ? 'For parts, mention if price is for original or compatible/generic part' : 'For phones, mention condition (new/used/excellent/good)'}`;
 
     const response = await this.callOpenRouter(prompt);
     this.logger.debug(`AI raw: ${response.substring(0, 800)}`);

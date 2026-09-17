@@ -7,6 +7,11 @@ export class PriceResearchDto {
   @IsString()
   productName: string;
 
+  @ApiPropertyOptional({ example: 'phone' })
+  @IsOptional()
+  @IsString()
+  type?: string;
+
   @ApiPropertyOptional({ example: 'Apple' })
   @IsOptional()
   @IsString()
