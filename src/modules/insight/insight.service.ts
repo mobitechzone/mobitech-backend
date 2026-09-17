@@ -320,4 +320,245 @@ export class InsightService {
       yesterday: { revenue: Number(yesterdayData._sum.total ?? 0), count: yesterdayData._count },
     };
   }
+
+  async getTransactionStats() {
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const last30 = new Date(Date.now() - 30 * 86400000);
+    const prev30 = new Date(Date.now() - 60 * 86400000);
+
+    const [monthData, lastMonthData, last30Data, prev30Data] = await this.prisma.$transaction([
+      this.prisma.sale.aggregate({ _sum: { total: true }, _count: true, where: { createdAt: { gte: thisMonth } } }),
+      this.prisma.sale.aggregate({ _sum: { total: true }, _count: true, where: { createdAt: { gte: lastMonth, lt: thisMonth } } }),
+      this.prisma.sale.aggregate({ _sum: { total: true }, _count: true, where: { createdAt: { gte: last30 } } }),
+      this.prisma.sale.aggregate({ _sum: { total: true }, _count: true, where: { createdAt: { gte: prev30, lt: last30 } } }),
+    ]);
+
+    const monthRevenue = Number(monthData._sum.total ?? 0);
+    const monthCount = monthData._count;
+    const lastMonthRevenue = Number(lastMonthData._sum.total ?? 0);
+    const lastMonthCount = lastMonthData._count;
+    const last30Revenue = Number(last30Data._sum.total ?? 0);
+    const last30Count = last30Data._count;
+    const prev30Revenue = Number(prev30Data._sum.total ?? 0);
+    const prev30Count = prev30Data._count;
+
+    return {
+      totalTransactionsMonth: monthCount,
+      avgOrderValueMonth: monthCount > 0 ? monthRevenue / monthCount : 0,
+      salesGrowthMonth: lastMonthRevenue > 0 ? ((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0,
+      totalTransactions30d: last30Count,
+      avgOrderValue30d: last30Count > 0 ? last30Revenue / last30Count : 0,
+      salesGrowth30d: prev30Revenue > 0 ? ((last30Revenue - prev30Revenue) / prev30Revenue) * 100 : 0,
+      monthRevenue,
+      lastMonthRevenue,
+      last30Revenue,
+      prev30Revenue,
+    };
+  }
+
+  async getAdvancedAnalytics() {
+    const sales = await this.prisma.sale.findMany({
+      select: { createdAt: true, total: true, profit: true, items: { select: { productId: true, quantity: true, unitPrice: true, lineTotal: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const daily: Record<string, { revenue: number; count: number; profit: number }> = {};
+    sales.forEach((s) => {
+      const key = new Date(s.createdAt).toISOString().split('T')[0];
+      if (!daily[key]) daily[key] = { revenue: 0, count: 0, profit: 0 };
+      daily[key].revenue += Number(s.total);
+      daily[key].count += 1;
+      daily[key].profit += Number(s.profit);
+    });
+
+    const dates = Object.keys(daily).sort();
+    const revenues = dates.map((d) => daily[d].revenue);
+    const counts = dates.map((d) => daily[d].count);
+
+    const movingAvg7 = this.movingAverage(revenues, 7);
+    const weightedMA = this.weightedMovingAverage(revenues, 7);
+    const ema = this.exponentialMovingAverage(revenues, 0.3);
+    const linearReg = this.linearRegression(revenues);
+
+    const productSales: Record<string, number> = {};
+    sales.forEach((s) => {
+      s.items.forEach((item) => {
+        if (!item.productId) return;
+        productSales[item.productId] = (productSales[item.productId] || 0) + Number(item.lineTotal);
+      });
+    });
+    const totalProductSales = Object.values(productSales).reduce((a, b) => a + b, 0);
+    const abcAnalysis = this.abcAnalysis(productSales, totalProductSales);
+
+    const correlation = this.correlation(revenues, counts);
+    const stdDev = this.standardDeviation(revenues);
+    const zScores = this.zScores(revenues);
+
+    const productPrices: Record<string, { total: number; count: number }> = {};
+    sales.forEach((s) => {
+      s.items.forEach((item) => {
+        if (!item.productId) return;
+        if (!productPrices[item.productId]) productPrices[item.productId] = { total: 0, count: 0 };
+        productPrices[item.productId].total += Number(item.unitPrice) * Number(item.quantity);
+        productPrices[item.productId].count += Number(item.quantity);
+      });
+    });
+
+    const coOccurrence: Record<string, number> = {};
+    const customerProducts: Record<string, Set<string>> = {};
+    sales.forEach((s) => {
+      const pids = s.items.map((i) => i.productId).filter(Boolean) as string[];
+      pids.forEach((pid) => {
+        if (!customerProducts[pid]) customerProducts[pid] = new Set();
+        pids.forEach((other) => {
+          if (pid !== other) customerProducts[pid].add(other);
+        });
+      });
+    });
+    Object.entries(customerProducts).forEach(([product, related]) => {
+      related.forEach((r) => {
+        const key = [product, r].sort().join('|||');
+        coOccurrence[key] = (coOccurrence[key] || 0) + 1;
+      });
+    });
+    const topRules = Object.entries(coOccurrence)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([key, count]) => {
+        const [a, b] = key.split('|||');
+        return { productA: a, productB: b, count, confidence: Math.round((count / sales.length) * 100) };
+      });
+
+    const percentiles = this.percentiles(revenues);
+
+    return {
+      dates,
+      revenues,
+      counts,
+      movingAvg7,
+      weightedMA,
+      ema,
+      linearRegression: linearReg,
+      correlation,
+      stdDev,
+      zScores,
+      abcAnalysis,
+      percentiles,
+      aprioriRules: topRules,
+      totalSales: sales.length,
+      totalRevenue: revenues.reduce((a, b) => a + b, 0),
+      avgDailyRevenue: revenues.length > 0 ? revenues.reduce((a, b) => a + b, 0) / revenues.length : 0,
+    };
+  }
+
+  private movingAverage(data: number[], window: number): number[] {
+    const result: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+      const start = Math.max(0, i - window + 1);
+      const slice = data.slice(start, i + 1);
+      result.push(slice.reduce((a, b) => a + b, 0) / slice.length);
+    }
+    return result;
+  }
+
+  private weightedMovingAverage(data: number[], window: number): number[] {
+    const result: number[] = [];
+    const weightSum = (window * (window + 1)) / 2;
+    for (let i = 0; i < data.length; i++) {
+      const start = Math.max(0, i - window + 1);
+      const slice = data.slice(start, i + 1);
+      let weighted = 0;
+      slice.forEach((v, idx) => { weighted += v * (idx + 1); });
+      result.push(weighted / weightSum);
+    }
+    return result;
+  }
+
+  private exponentialMovingAverage(data: number[], alpha: number): number[] {
+    const result: number[] = [];
+    if (data.length === 0) return result;
+    result.push(data[0]);
+    for (let i = 1; i < data.length; i++) {
+      result.push(alpha * data[i] + (1 - alpha) * result[i - 1]);
+    }
+    return result;
+  }
+
+  private linearRegression(data: number[]): { slope: number; intercept: number; r2: number; predictions: number[] } {
+    const n = data.length;
+    if (n === 0) return { slope: 0, intercept: 0, r2: 0, predictions: [] };
+    const x = data.map((_, i) => i);
+    const xMean = x.reduce((a, b) => a + b, 0) / n;
+    const yMean = data.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0, ssRes = 0, ssTot = 0;
+    for (let i = 0; i < n; i++) {
+      num += (x[i] - xMean) * (data[i] - yMean);
+      den += (x[i] - xMean) ** 2;
+    }
+    const slope = den !== 0 ? num / den : 0;
+    const intercept = yMean - slope * xMean;
+    for (let i = 0; i < n; i++) {
+      const pred = slope * i + intercept;
+      ssRes += (data[i] - pred) ** 2;
+      ssTot += (data[i] - yMean) ** 2;
+    }
+    const r2 = ssTot !== 0 ? 1 - ssRes / ssTot : 0;
+    const predictions = data.map((_, i) => slope * i + intercept);
+    return { slope, intercept, r2, predictions };
+  }
+
+  private correlation(x: number[], y: number[]): number {
+    const n = Math.min(x.length, y.length);
+    if (n < 2) return 0;
+    const xArr = x.slice(0, n), yArr = y.slice(0, n);
+    const xMean = xArr.reduce((a, b) => a + b, 0) / n;
+    const yMean = yArr.reduce((a, b) => a + b, 0) / n;
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < n; i++) {
+      num += (xArr[i] - xMean) * (yArr[i] - yMean);
+      dx += (xArr[i] - xMean) ** 2;
+      dy += (yArr[i] - yMean) ** 2;
+    }
+    const den = Math.sqrt(dx * dy);
+    return den !== 0 ? num / den : 0;
+  }
+
+  private standardDeviation(data: number[]): number {
+    if (data.length < 2) return 0;
+    const mean = data.reduce((a, b) => a + b, 0) / data.length;
+    const variance = data.reduce((sum, val) => sum + (val - mean) ** 2, 0) / data.length;
+    return Math.sqrt(variance);
+  }
+
+  private zScores(data: number[]): number[] {
+    if (data.length < 2) return data.map(() => 0);
+    const mean = data.reduce((a, b) => a + b, 0) / data.length;
+    const std = this.standardDeviation(data);
+    if (std === 0) return data.map(() => 0);
+    return data.map((v) => (v - mean) / std);
+  }
+
+  private abcAnalysis(sales: Record<string, number>, total: number): { product: string; revenue: number; percentage: number; class: string }[] {
+    const items = Object.entries(sales)
+      .sort((a, b) => b[1] - a[1])
+      .map(([product, revenue]) => ({ product, revenue, percentage: total > 0 ? (revenue / total) * 100 : 0, class: '' }));
+    let cumulative = 0;
+    items.forEach((item) => {
+      cumulative += item.percentage;
+      item.class = cumulative <= 80 ? 'A' : cumulative <= 95 ? 'B' : 'C';
+    });
+    return items;
+  }
+
+  private percentiles(data: number[]): Record<string, number> {
+    if (data.length === 0) return {};
+    const sorted = [...data].sort((a, b) => a - b);
+    const get = (p: number) => {
+      const idx = Math.ceil((p / 100) * sorted.length) - 1;
+      return sorted[Math.max(0, idx)];
+    };
+    return { p10: get(10), p25: get(25), p50: get(50), p75: get(75), p90: get(90), p95: get(95) };
+  }
 }

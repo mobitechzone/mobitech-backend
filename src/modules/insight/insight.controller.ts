@@ -86,4 +86,18 @@ export class InsightController {
   dailyComparison() {
     return this.insightService.getDailyRevenueComparison();
   }
+
+  @Get('transaction-stats')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Get transaction count, AOV, sales growth' })
+  transactionStats() {
+    return this.insightService.getTransactionStats();
+  }
+
+  @Get('advanced-analytics')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Get full statistical analytics' })
+  advancedAnalytics() {
+    return this.insightService.getAdvancedAnalytics();
+  }
 }
