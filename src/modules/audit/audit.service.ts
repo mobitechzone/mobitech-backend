@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -7,6 +8,19 @@ export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  @Cron('0 0 */10 * * *')
+  async cleanupOldLogs() {
+    try {
+      const cutoff = new Date(Date.now() - 10 * 60 * 60 * 1000);
+      const { count } = await this.prisma.auditLog.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      if (count > 0) this.logger.log(`Cleaned up ${count} audit logs older than 10h`);
+    } catch (e) {
+      this.logger.error('Failed to cleanup audit logs', e);
+    }
+  }
 
   async log(data: {
     action: AuditAction;
